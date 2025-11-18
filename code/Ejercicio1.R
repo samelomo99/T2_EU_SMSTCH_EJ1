@@ -458,7 +458,7 @@ dens_obs_epan <- density(
 top5_poly <- st_transform(barrios_top5, 32632)
 
 set.seed(123)
-n_sim      <- 500
+n_sim      <- 50
 boot_points <- list()
 for(i in 1:n_sim){
   boot_points[[i]] <- st_sample(top5_poly, size = nrow(restaurants_pt), type = "random")
@@ -510,3 +510,67 @@ plot_test_epan <- ggplot(rest_test) +
 
 plot_test_epan
 ggsave("export/test_DO.png", plot = plot_test_epan, width = 9, height = 6)
+
+# Para 2004
+
+restaurants_top5_2004 <- restaurants %>% 
+  filter(zona180 %in% barrios_top5$zona180) %>% 
+  filter(!is.na(lat2004) & !is.na(long2004))
+
+restaurants_pt_2004 <- st_as_sf(
+  restaurants_top5_2004,
+  coords = c("long2004", "lat2004"),
+  crs = 4326
+) %>% 
+  st_transform(32632)
+
+bilat_distances_mat_2004 <- st_distance(restaurants_pt_2004)
+bilat_distances_mat_2004[lower.tri(bilat_distances_mat_2004, diag = TRUE)] <- NA
+
+bilat_vec_2004 <- c(bilat_distances_mat_2004)
+bilat_vec_2004 <- bilat_vec_2004[!is.na(bilat_vec_2004)]
+units(bilat_vec_2004) <- make_units(km)
+
+bilat_km_2004 <- as.numeric(bilat_vec_2004)
+bilat_km_2004 <- bilat_km_2004[bilat_km_2004 <= 1]
+
+dens_obs_epan_2004 <- density(
+  bilat_km_2004, 
+  bw = "nrd",
+  kernel = "epanechnikov",
+  from = from_val, to = to_val, n = n_points
+)
+
+set.seed(123)
+boot_points_2004 <- list()
+
+for(i in 1:n_sim){
+  boot_points_2004[[i]] <- st_sample(top5_poly, size = nrow(restaurants_pt_2004), type = "random")
+}
+
+boot_dens_list_2004 <- lapply(boot_points_2004, density_calculator_epan)
+boot_dens_mat_2004  <- do.call(cbind, boot_dens_list_2004)
+
+q05_epan_2004 <- apply(boot_dens_mat_2004, 1, function(x) quantile(x, probs = 0.05))
+q95_epan_2004 <- apply(boot_dens_mat_2004, 1, function(x) quantile(x, probs = 0.95))
+
+rest_test_2004 <- data.frame(
+  locations = dens_obs_epan_2004$x,
+  observada = dens_obs_epan_2004$y,
+  q05 = q05_epan_2004,
+  q95 = q95_epan_2004
+)
+
+plot_test_epan_2004 <- ggplot(rest_test_2004) +
+  geom_line(aes(x = locations, y = observada), size = 1) +
+  geom_line(aes(x = locations, y = q05), linetype = "dashed") +
+  geom_line(aes(x = locations, y = q95), linetype = "dashed") +
+  theme_bw() +
+  labs(
+    x = "Distancia (km)",
+    y = "Densidad (estimada)",
+    title = "Test de Duranton & Overman (Kernel Epanechnikov) — 2004"
+  ) +
+  theme(plot.title = element_text(hjust = 0.5))
+
+ggsave("export/test_DO_2004.png", plot = plot_test_epan_2004, width = 9, height = 6)
